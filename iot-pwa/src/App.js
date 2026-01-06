@@ -9,19 +9,41 @@ function App() {
     let jwt = null;
 
     const fetchData = async () => {
+      // --- OFFLINE MODE ---
       if (!navigator.onLine) {
-        const cached = localStorage.getItem("cachedSensorData");
-        if (cached) {
-          setData(JSON.parse(cached));
-          setError("Offline — showing cached data");
-        } else {
-          setError("Offline — no cached data available");
+        setError("Offline — showing cached data");
+
+        // 1. Try service worker cache first
+        try {
+          const cache = await caches.open("sensor-data-cache");
+          const cachedResponse = await cache.match(
+            `${process.env.REACT_APP_BACKEND_URL}/api/data/`
+          );
+
+          if (cachedResponse) {
+            const cachedJson = await cachedResponse.json();
+            setData(cachedJson);
+            return;
+          }
+        } catch (err) {
+          console.log("SW cache read failed:", err);
         }
+
+        // 2. Fallback to localStorage
+        const local = localStorage.getItem("cachedSensorData");
+        if (local) {
+          setData(JSON.parse(local));
+          return;
+        }
+
+        // 3. Nothing available
+        setError("Offline — no cached data available");
         return;
       }
 
+      // --- ONLINE MODE ---
       try {
-        // Step 1: Login once
+        // Login once
         if (!jwt) {
           const loginRes = await fetch(
             `${process.env.REACT_APP_BACKEND_URL}/api/login`,
@@ -33,8 +55,6 @@ function App() {
           );
 
           if (!loginRes.ok) {
-            const text = await loginRes.text();
-            console.error("Login failed:", text);
             setError("Login failed");
             return;
           }
@@ -43,7 +63,7 @@ function App() {
           jwt = loginJson.token;
         }
 
-        // Step 2: Fetch sensor data
+        // Fetch sensor data
         const res = await fetch(
           `${process.env.REACT_APP_BACKEND_URL}/api/data/`,
           {
@@ -52,15 +72,16 @@ function App() {
         );
 
         if (!res.ok) {
-          const text = await res.text();
-          console.error("Data fetch failed:", text);
           setError("Failed to fetch sensor data");
           return;
         }
 
         const json = await res.json();
         setData(json);
+
+        // Save to localStorage for fallback
         localStorage.setItem("cachedSensorData", JSON.stringify(json));
+
         setError(null);
       } catch (err) {
         console.error("Unexpected error:", err);
