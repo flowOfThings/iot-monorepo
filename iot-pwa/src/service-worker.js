@@ -9,7 +9,7 @@ import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
 
 // --- VERSIONING ---
-const SW_VERSION = 'v5';
+const SW_VERSION = 'v6';
 const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
 const STATIC_CACHE = `static-assets-${SW_VERSION}`;
 const IMAGE_CACHE = `images-${SW_VERSION}`;
@@ -21,14 +21,14 @@ clientsClaim();
 // --- PRECACHE BUILD FILES ---
 precacheAndRoute(self.__WB_MANIFEST);
 
-// --- PRE-CACHE API ENDPOINT (fixes offline reload after fresh install) ---
+// --- PRE-CACHE API FALLBACK RESPONSE ---
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SENSOR_CACHE).then((cache) => {
       const fallbackData = new Response(
         JSON.stringify([
           {
-            timestamp: Date.now(),
+            timestamp: new Date().toISOString(),
             temperature: 0,
             humidity: 0,
           },
@@ -79,22 +79,25 @@ registerRoute(
   })
 );
 
-// --- API CACHING (fresh online, cached offline) ---
+// --- API CACHING (fresh online, fallback offline) ---
 registerRoute(
   ({ url }) =>
     url.origin === 'https://django-iot-backend.onrender.com' &&
     url.pathname.startsWith('/api/data/'),
-  new NetworkFirst({
-    cacheName: SENSOR_CACHE,
-    networkTimeoutSeconds: 3,
-    plugins: [
-      new CacheableResponsePlugin({ statuses: [200] }),
-      new ExpirationPlugin({
-        maxEntries: 20,
-        maxAgeSeconds: 0,
-      }),
-    ],
-  })
+  async ({ request }) => {
+    try {
+      const response = await fetch(request);
+      const cache = await caches.open(SENSOR_CACHE);
+      cache.put(request, response.clone());
+      return response;
+    } catch (error) {
+      const cache = await caches.open(SENSOR_CACHE);
+      const cachedResponse = await cache.match(request);
+      return cachedResponse || new Response("[]", {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
 );
 
 // --- ALLOW SKIPWAITING VIA MESSAGE ---
