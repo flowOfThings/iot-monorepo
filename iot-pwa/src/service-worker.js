@@ -1,18 +1,18 @@
 /* eslint-disable no-restricted-globals */
 
-// --- VERSIONING (bump this on every deploy) ---
-const SW_VERSION = 'v4';
-const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
-const STATIC_CACHE = `static-assets-${SW_VERSION}`;
-const IMAGE_CACHE = `images-${SW_VERSION}`;
-
-// All imports must be at the top
+// --- IMPORTS MUST BE FIRST ---
 import { clientsClaim } from 'workbox-core';
 import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
+
+// --- VERSIONING (safe to put AFTER imports) ---
+const SW_VERSION = 'v4';
+const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
+const STATIC_CACHE = `static-assets-${SW_VERSION}`;
+const IMAGE_CACHE = `images-${SW_VERSION}`;
 
 // --- FORCE NEW SW TO ACTIVATE IMMEDIATELY ---
 self.skipWaiting();
@@ -53,7 +53,7 @@ registerRoute(
   })
 );
 
-// --- API CACHING WITH VERSIONING + FRESH ONLINE DATA ---
+// API caching
 registerRoute(
   ({ url }) =>
     url.origin === 'https://django-iot-backend.onrender.com' &&
@@ -62,12 +62,10 @@ registerRoute(
     cacheName: SENSOR_CACHE,
     networkTimeoutSeconds: 3,
     plugins: [
-      new CacheableResponsePlugin({
-        statuses: [200],
-      }),
+      new CacheableResponsePlugin({ statuses: [200] }),
       new ExpirationPlugin({
         maxEntries: 20,
-        maxAgeSeconds: 0, // force revalidation
+        maxAgeSeconds: 0,
       }),
     ],
   })
