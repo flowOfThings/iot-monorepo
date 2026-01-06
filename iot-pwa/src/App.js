@@ -15,10 +15,17 @@ function App() {
 
         // 1. Try service worker cache first
         try {
-          const cache = await caches.open("sensor-data-cache");
-          const cachedResponse = await cache.match(
-            `${process.env.REACT_APP_BACKEND_URL}/api/data/`
+          const cache = await caches.open("sensor-data-cache-v5");
+          const keys = await cache.keys();
+          const match = keys.find((req) =>
+            req.url.includes("/api/data/")
           );
+          if (match) {
+            const cachedResponse = await cache.match(match);
+            const cachedJson = await cachedResponse.json();
+            setData(cachedJson);
+            return;
+          }
 
           if (cachedResponse) {
             const cachedJson = await cachedResponse.json();
