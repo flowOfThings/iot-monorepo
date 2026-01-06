@@ -48,11 +48,16 @@ registerRoute(
 registerRoute(
   ({ url }) =>
     url.origin === 'https://django-iot-backend.onrender.com' &&
-    url.pathname.startsWith('/sensor-data'),
+    url.pathname.startsWith('/api/data/'),
   new NetworkFirst({
     cacheName: 'sensor-data-cache',
     networkTimeoutSeconds: 3,
-    plugins: [new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 3600 })],
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 20,
+        maxAgeSeconds: 60 * 60, // 1 hour
+      }),
+    ],
   })
 );
 
