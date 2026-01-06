@@ -25,7 +25,11 @@ precacheAndRoute(self.__WB_MANIFEST);
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SENSOR_CACHE).then((cache) => {
-      return cache.add("https://django-iot-backend.onrender.com/api/data/");
+      const fallbackData = new Response(
+        JSON.stringify([{ timestamp: Date.now(), temperature: 0, humidity: 0 }]),
+        { headers: { "Content-Type": "application/json" } }
+      );
+      return cache.put("https://django-iot-backend.onrender.com/api/data/", fallbackData);
     })
   );
 });
