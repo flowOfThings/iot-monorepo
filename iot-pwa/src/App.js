@@ -36,7 +36,7 @@ async function readCachedData() {
 
     if (cachedResponse) {
       const json = await cachedResponse.json();
-      return normalizeReadings(json);
+      return { data: normalizeReadings(json), source: "cache" };
     }
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -47,19 +47,22 @@ async function readCachedData() {
   try {
     const local = localStorage.getItem("cachedSensorData");
     if (local) {
-      return normalizeReadings(JSON.parse(local));
+      return { data: normalizeReadings(JSON.parse(local)), source: "localStorage" };
     }
   } catch (err) {
     // ignore parse errors
   }
 
-  return null;
+  return { data: null, source: null };
 }
 
 function App() {
   const [data, setData] = useState([]);
   const [error, setError] = useState(null); // only for real errors (no cached data)
   const [cached, setCached] = useState(false); // true when data came from cache
+  const [lastCachedTime, setLastCachedTime] = useState(null);
+  const [lastLiveTime, setLastLiveTime] = useState(null);
+
   const pollingRef = useRef(null);
   const jwtRef = useRef(null);
   const stoppedRef = useRef(false);
@@ -72,11 +75,12 @@ function App() {
 
       // If offline, read cache and stop polling
       if (!navigator.onLine) {
-        const cachedData = await readCachedData();
+        const { data: cachedData, source } = await readCachedData();
         if (cachedData && cachedData.length > 0) {
           setData(cachedData);
           setCached(true);
           setError(null); // clear any previous error because we have cached data
+          setLastCachedTime(new Date().toLocaleTimeString());
         } else {
           setData([]);
           setCached(false);
@@ -108,11 +112,12 @@ function App() {
 
           if (!loginRes.ok) {
             // If login fails, try cached data before reporting error
-            const cachedData = await readCachedData();
+            const { data: cachedData } = await readCachedData();
             if (cachedData && cachedData.length > 0) {
               setData(cachedData);
               setCached(true);
               setError(null);
+              setLastCachedTime(new Date().toLocaleTimeString());
               return;
             }
             setError("Login failed");
@@ -131,11 +136,12 @@ function App() {
 
         if (!res.ok) {
           // Try cached data before reporting error
-          const cachedData = await readCachedData();
+          const { data: cachedData } = await readCachedData();
           if (cachedData && cachedData.length > 0) {
             setData(cachedData);
             setCached(true);
             setError(null);
+            setLastCachedTime(new Date().toLocaleTimeString());
             return;
           }
           setError("Failed to fetch sensor data");
@@ -147,6 +153,7 @@ function App() {
         setData(normalized);
         setCached(false);
         setError(null);
+        setLastLiveTime(new Date().toLocaleTimeString());
 
         // Save to localStorage for fallback
         try {
@@ -154,16 +161,33 @@ function App() {
         } catch (err) {
           // ignore storage errors
         }
+
+        // Also write the live response into the cache under the stable URL string
+        try {
+          const apiUrl = `${process.env.REACT_APP_BACKEND_URL}${API_PATH}`;
+          const cache = await caches.open(CACHE_NAME);
+          const response = new Response(JSON.stringify(normalized), {
+            headers: { "Content-Type": "application/json" },
+          });
+          await cache.put(apiUrl, response);
+          setLastCachedTime(new Date().toLocaleTimeString());
+          // eslint-disable-next-line no-console
+          console.log("App: cached live API response");
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn("App: cache put failed (ignored)", err);
+        }
       } catch (err) {
         // Network or unexpected error while online: try cache first
         // eslint-disable-next-line no-console
         console.error("Fetch error:", err);
 
-        const cachedData = await readCachedData();
+        const { data: cachedData } = await readCachedData();
         if (cachedData && cachedData.length > 0) {
           setData(cachedData);
           setCached(true);
           setError(null); // do not show fatal error when cached data exists
+          setLastCachedTime(new Date().toLocaleTimeString());
           return;
         }
 
@@ -200,12 +224,16 @@ function App() {
         </div>
       )}
 
-      {/* Show cached status (non-error) */}
-      {cached && (
+      {/* Live vs cached status */}
+      {cached ? (
         <div style={{ background: "#fff3cd", padding: "8px", marginBottom: "10px", color: "#856404" }}>
-          Showing cached data
+          Showing cached data {lastCachedTime ? ` (last cached ${lastCachedTime})` : ""}
         </div>
-      )}
+      ) : lastLiveTime ? (
+        <div style={{ background: "#d4edda", padding: "8px", marginBottom: "10px", color: "#155724" }}>
+          Live data {lastLiveTime ? ` (last updated ${lastLiveTime})` : ""}
+        </div>
+      ) : null}
 
       {/* Only show error when there truly is no usable data */}
       {error && !cached && <p style={{ color: "red" }}>{error}</p>}
