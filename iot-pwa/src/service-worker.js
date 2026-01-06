@@ -6,6 +6,7 @@ import { ExpirationPlugin } from 'workbox-expiration';
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
 clientsClaim();
 
@@ -53,9 +54,12 @@ registerRoute(
     cacheName: 'sensor-data-cache',
     networkTimeoutSeconds: 3,
     plugins: [
+      new CacheableResponsePlugin({
+        statuses: [200],
+      }),
       new ExpirationPlugin({
         maxEntries: 20,
-        maxAgeSeconds: 60 * 60, // 1 hour
+        maxAgeSeconds: 0, // force revalidation
       }),
     ],
   })
