@@ -26,10 +26,19 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(SENSOR_CACHE).then((cache) => {
       const fallbackData = new Response(
-        JSON.stringify([{ timestamp: Date.now(), temperature: 0, humidity: 0 }]),
+        JSON.stringify([
+          {
+            timestamp: Date.now(),
+            temperature: 0,
+            humidity: 0,
+          },
+        ]),
         { headers: { "Content-Type": "application/json" } }
       );
-      return cache.put("https://django-iot-backend.onrender.com/api/data/", fallbackData);
+      return cache.put(
+        "https://django-iot-backend.onrender.com/api/data/",
+        fallbackData
+      );
     })
   );
 });
