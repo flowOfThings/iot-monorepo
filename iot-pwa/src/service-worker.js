@@ -30,6 +30,14 @@ self.addEventListener('install', (event) => {
         const cache = await caches.open(SENSOR_CACHE);
         const apiUrl = 'https://django-iot-backend.onrender.com/api/data/';
 
+        // If there's already a cached entry, keep it — don't overwrite with fallback.
+        const existing = await cache.match(apiUrl);
+        if (existing) {
+          // eslint-disable-next-line no-console
+          console.log('SW install: existing /api/data/ found, skipping fallback write');
+          return;
+        }
+
         // Best-effort: try to fetch and cache the real API response
         try {
           const resp = await fetch(apiUrl, { cache: 'no-store' });
@@ -144,6 +152,8 @@ registerRoute(
         // Update cache with fresh response (best-effort)
         try {
           await cache.put(apiKey, networkResponse.clone());
+          // eslint-disable-next-line no-console
+          console.log('SW runtime: cached network response for', apiKey);
         } catch (err) {
           // ignore cache.put errors
           // eslint-disable-next-line no-console
