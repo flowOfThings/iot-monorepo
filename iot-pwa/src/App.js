@@ -13,21 +13,18 @@ function App() {
       if (!navigator.onLine) {
         setError("Offline — showing cached data");
 
-        // 1. Try service worker cache first
         try {
+          // Open the correct versioned cache
           const cache = await caches.open("sensor-data-cache-v5");
           const keys = await cache.keys();
+
+          // Find the cached API response (works even with query params)
           const match = keys.find((req) =>
             req.url.includes("/api/data/")
           );
+
           if (match) {
             const cachedResponse = await cache.match(match);
-            const cachedJson = await cachedResponse.json();
-            setData(cachedJson);
-            return;
-          }
-
-          if (cachedResponse) {
             const cachedJson = await cachedResponse.json();
             setData(cachedJson);
             return;
@@ -36,14 +33,13 @@ function App() {
           console.log("SW cache read failed:", err);
         }
 
-        // 2. Fallback to localStorage
+        // Fallback to localStorage
         const local = localStorage.getItem("cachedSensorData");
         if (local) {
           setData(JSON.parse(local));
           return;
         }
 
-        // 3. Nothing available
         setError("Offline — no cached data available");
         return;
       }
@@ -86,7 +82,7 @@ function App() {
         const json = await res.json();
         setData(json);
 
-        // Save to localStorage for fallback
+        // Save to localStorage for offline fallback
         localStorage.setItem("cachedSensorData", JSON.stringify(json));
 
         setError(null);
