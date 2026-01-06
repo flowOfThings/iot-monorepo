@@ -122,11 +122,10 @@ registerRoute(
     url.origin === 'https://django-iot-backend.onrender.com' && url.pathname.startsWith('/api/data/'),
   async ({ request }) => {
     const cache = await caches.open(SENSOR_CACHE);
-    const apiKey = request.url;
+    const apiKey = request.url; // stable string key
 
-    // Try network first with a short timeout
+    // Try network first
     try {
-      // Attempt network fetch
       const networkResponse = await fetch(request);
       if (networkResponse && networkResponse.ok) {
         // Update cache with fresh response (best-effort)
@@ -141,10 +140,22 @@ registerRoute(
       // network failed — fall back to cache below
     }
 
-    // Try to return cached response
+    // Try to return cached response by exact URL
     try {
       const cached = await cache.match(apiKey);
       if (cached) return cached;
+    } catch (err) {
+      // ignore
+    }
+
+    // If exact match not found, search keys for any entry that contains the API path (handles query params)
+    try {
+      const keys = await cache.keys();
+      const matchReq = keys.find((req) => req.url && req.url.includes('/api/data/'));
+      if (matchReq) {
+        const cached = await cache.match(matchReq.url || matchReq);
+        if (cached) return cached;
+      }
     } catch (err) {
       // ignore
     }
