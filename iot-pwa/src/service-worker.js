@@ -12,6 +12,7 @@ import { ExpirationPlugin } from 'workbox-expiration';
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkFirst } from 'workbox-strategies'; // Cache API responses for offline graph
 
 clientsClaim();
 
@@ -68,5 +69,23 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+registerRoute(
+  ({ url }) => {
+    // Match your backend API endpoint
+    return url.origin === 'https://django-iot-backend.onrender.com' &&
+           url.pathname.startsWith('/sensor-data');
+  },
+  new NetworkFirst({
+    cacheName: 'sensor-data-cache',
+    networkTimeoutSeconds: 3,
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 20,
+        maxAgeSeconds: 60 * 60, // 1 hour
+      }),
+    ],
+  })
+);
 
 // Any other custom service worker logic can go here.
