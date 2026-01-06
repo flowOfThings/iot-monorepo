@@ -9,7 +9,7 @@ import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate } from 'workbox-strategies';
 
 // --- VERSIONING ---
-const SW_VERSION = 'v6';
+const SW_VERSION = 'v7';
 const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
 const STATIC_CACHE = `static-assets-${SW_VERSION}`;
 const IMAGE_CACHE = `images-${SW_VERSION}`;
@@ -22,8 +22,7 @@ clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
 
 // --- SAFE PRE-CACHE FOR API ENDPOINT ---
-// This ensures the install step never fails when offline.
-// We attempt to fetch the real endpoint and cache it; if that fails we write a valid fallback JSON.
+// Install will try to fetch the real API; if that fails we write a short realistic series
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
@@ -31,36 +30,43 @@ self.addEventListener('install', (event) => {
         const cache = await caches.open(SENSOR_CACHE);
         const apiUrl = 'https://django-iot-backend.onrender.com/api/data/';
 
-        // Try to fetch the real API once during install (best-effort).
-        // If network is available and returns 200, cache that response.
-        // If fetch fails (offline or network error), write a safe fallback response into the cache.
+        // Best-effort: try to fetch and cache the real API response
         try {
           const resp = await fetch(apiUrl, { cache: 'no-store' });
           if (resp && resp.ok) {
             await cache.put(apiUrl, resp.clone());
+            // eslint-disable-next-line no-console
+            console.log('SW install: cached real API response');
             return;
           }
         } catch (err) {
           // fetch failed — fall through to put fallback
+          // eslint-disable-next-line no-console
+          console.warn('SW install: fetch failed, will write fallback', err);
         }
 
-        // Fallback: put a minimal but valid JSON response so the app can parse it offline.
+        // Fallback: a short realistic series so the chart renders meaningfully offline
+        const now = Date.now();
         const fallbackPayload = [
-          {
-            timestamp: new Date().toISOString(),
-            temperature: 0,
-            humidity: 0,
-          },
+          { timestamp: new Date(now - 11 * 60 * 1000).toISOString(), temperature: 21.5, humidity: 45.0 },
+          { timestamp: new Date(now - 10 * 60 * 1000).toISOString(), temperature: 21.7, humidity: 44.0 },
+          { timestamp: new Date(now - 9 * 60 * 1000).toISOString(),  temperature: 21.6, humidity: 44.5 },
+          { timestamp: new Date(now - 8 * 60 * 1000).toISOString(),  temperature: 21.8, humidity: 44.0 },
+          { timestamp: new Date(now - 7 * 60 * 1000).toISOString(),  temperature: 22.0, humidity: 43.5 },
+          { timestamp: new Date(now - 6 * 60 * 1000).toISOString(),  temperature: 22.3, humidity: 43.0 },
+          { timestamp: new Date(now - 5 * 60 * 1000).toISOString(),  temperature: 22.1, humidity: 43.2 }
         ];
+
         const fallbackResponse = new Response(JSON.stringify(fallbackPayload), {
           headers: { 'Content-Type': 'application/json' },
         });
         await cache.put(apiUrl, fallbackResponse);
-      } catch (err) {
-        // Swallow any install-time errors so install doesn't fail.
-        // Logging is safe for debugging in DevTools.
         // eslint-disable-next-line no-console
-        console.warn('SW install: failed to pre-cache API (ignored):', err);
+        console.log('SW install: wrote fallback payload to cache', apiUrl);
+      } catch (err) {
+        // Swallow install-time errors so install doesn't fail.
+        // eslint-disable-next-line no-console
+        console.warn('SW install: unexpected error (ignored):', err);
       }
     })()
   );
@@ -70,14 +76,21 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
-      const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((k) => ![SENSOR_CACHE, STATIC_CACHE, IMAGE_CACHE].includes(k))
-          .map((k) => caches.delete(k))
-      );
-      // Claim clients so the new SW takes control immediately
-      await self.clients.claim();
+      try {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys
+            .filter((k) => ![SENSOR_CACHE, STATIC_CACHE, IMAGE_CACHE].includes(k))
+            .map((k) => caches.delete(k))
+        );
+        // Claim clients so the new SW takes control immediately
+        await self.clients.claim();
+        // eslint-disable-next-line no-console
+        console.log('SW activate: cleaned old caches, active version', SW_VERSION);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('SW activate: cleanup error (ignored):', err);
+      }
     })()
   );
 });
@@ -116,7 +129,7 @@ registerRoute(
 );
 
 // --- API ROUTE: resilient handler for /api/data/ ---
-// Try network, cache successful responses, fall back to cache or fallback JSON.
+// Try network, cache successful responses under the URL string, fall back to cache or fallback JSON.
 registerRoute(
   ({ url }) =>
     url.origin === 'https://django-iot-backend.onrender.com' && url.pathname.startsWith('/api/data/'),
@@ -133,17 +146,25 @@ registerRoute(
           await cache.put(apiKey, networkResponse.clone());
         } catch (err) {
           // ignore cache.put errors
+          // eslint-disable-next-line no-console
+          console.warn('SW runtime: cache.put failed (ignored)', err);
         }
         return networkResponse;
       }
     } catch (err) {
       // network failed — fall back to cache below
+      // eslint-disable-next-line no-console
+      console.warn('SW runtime: network fetch failed, will try cache', err);
     }
 
     // Try to return cached response by exact URL
     try {
       const cached = await cache.match(apiKey);
-      if (cached) return cached;
+      if (cached) {
+        // eslint-disable-next-line no-console
+        console.log('SW runtime: serving cached exact match for', apiKey);
+        return cached;
+      }
     } catch (err) {
       // ignore
     }
@@ -151,10 +172,16 @@ registerRoute(
     // If exact match not found, search keys for any entry that contains the API path (handles query params)
     try {
       const keys = await cache.keys();
+      // eslint-disable-next-line no-console
+      console.log('SW runtime: cache keys:', keys.map(k => k.url));
       const matchReq = keys.find((req) => req.url && req.url.includes('/api/data/'));
       if (matchReq) {
         const cached = await cache.match(matchReq.url || matchReq);
-        if (cached) return cached;
+        if (cached) {
+          // eslint-disable-next-line no-console
+          console.log('SW runtime: serving cached fuzzy match for', matchReq.url || matchReq);
+          return cached;
+        }
       }
     } catch (err) {
       // ignore
@@ -162,12 +189,10 @@ registerRoute(
 
     // As a last resort, return a safe fallback JSON (same shape as install fallback)
     const fallbackPayload = [
-      {
-        timestamp: new Date().toISOString(),
-        temperature: 0,
-        humidity: 0,
-      },
+      { timestamp: new Date().toISOString(), temperature: 21.0, humidity: 44.0 }
     ];
+    // eslint-disable-next-line no-console
+    console.log('SW runtime: returning inline fallback payload');
     return new Response(JSON.stringify(fallbackPayload), {
       headers: { 'Content-Type': 'application/json' },
     });
