@@ -6,7 +6,7 @@ import { ExpirationPlugin } from 'workbox-expiration';
 import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { registerRoute } from 'workbox-routing';
-import { StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
+import { StaleWhileRevalidate } from 'workbox-strategies';
 
 // --- VERSIONING ---
 const SW_VERSION = 'v6';
@@ -21,25 +21,64 @@ clientsClaim();
 // --- PRECACHE BUILD FILES ---
 precacheAndRoute(self.__WB_MANIFEST);
 
-// --- PRE-CACHE API FALLBACK RESPONSE ---
-self.addEventListener("install", (event) => {
+// --- SAFE PRE-CACHE FOR API ENDPOINT ---
+// This ensures the install step never fails when offline.
+// We attempt to fetch the real endpoint and cache it; if that fails we write a valid fallback JSON.
+self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SENSOR_CACHE).then((cache) => {
-      const fallbackData = new Response(
-        JSON.stringify([
+    (async () => {
+      try {
+        const cache = await caches.open(SENSOR_CACHE);
+        const apiUrl = 'https://django-iot-backend.onrender.com/api/data/';
+
+        // Try to fetch the real API once during install (best-effort).
+        // If network is available and returns 200, cache that response.
+        // If fetch fails (offline or network error), write a safe fallback response into the cache.
+        try {
+          const resp = await fetch(apiUrl, { cache: 'no-store' });
+          if (resp && resp.ok) {
+            await cache.put(apiUrl, resp.clone());
+            return;
+          }
+        } catch (err) {
+          // fetch failed — fall through to put fallback
+        }
+
+        // Fallback: put a minimal but valid JSON response so the app can parse it offline.
+        const fallbackPayload = [
           {
             timestamp: new Date().toISOString(),
             temperature: 0,
             humidity: 0,
           },
-        ]),
-        { headers: { "Content-Type": "application/json" } }
+        ];
+        const fallbackResponse = new Response(JSON.stringify(fallbackPayload), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        await cache.put(apiUrl, fallbackResponse);
+      } catch (err) {
+        // Swallow any install-time errors so install doesn't fail.
+        // Logging is safe for debugging in DevTools.
+        // eslint-disable-next-line no-console
+        console.warn('SW install: failed to pre-cache API (ignored):', err);
+      }
+    })()
+  );
+});
+
+// --- CLEANUP OLD CACHES ON ACTIVATE ---
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((k) => ![SENSOR_CACHE, STATIC_CACHE, IMAGE_CACHE].includes(k))
+          .map((k) => caches.delete(k))
       );
-      return cache.put(
-        "https://django-iot-backend.onrender.com/api/data/",
-        fallbackData
-      );
-    })
+      // Claim clients so the new SW takes control immediately
+      await self.clients.claim();
+    })()
   );
 });
 
@@ -58,9 +97,7 @@ registerRoute(
 
 // --- IMAGE CACHING ---
 registerRoute(
-  ({ url }) =>
-    url.origin === self.location.origin &&
-    url.pathname.endsWith('.png'),
+  ({ url }) => url.origin === self.location.origin && url.pathname.endsWith('.png'),
   new StaleWhileRevalidate({
     cacheName: IMAGE_CACHE,
     plugins: [new ExpirationPlugin({ maxEntries: 50 })],
@@ -71,32 +108,58 @@ registerRoute(
 registerRoute(
   ({ url }) =>
     url.origin === self.location.origin &&
-    (url.pathname.endsWith('/manifest.json') ||
-     url.pathname.endsWith('/favicon.ico')),
+    (url.pathname.endsWith('/manifest.json') || url.pathname.endsWith('/favicon.ico')),
   new StaleWhileRevalidate({
     cacheName: STATIC_CACHE,
     plugins: [new ExpirationPlugin({ maxEntries: 10 })],
   })
 );
 
-// --- API CACHING (fresh online, fallback offline) ---
+// --- API ROUTE: resilient handler for /api/data/ ---
+// Try network, cache successful responses, fall back to cache or fallback JSON.
 registerRoute(
   ({ url }) =>
-    url.origin === 'https://django-iot-backend.onrender.com' &&
-    url.pathname.startsWith('/api/data/'),
+    url.origin === 'https://django-iot-backend.onrender.com' && url.pathname.startsWith('/api/data/'),
   async ({ request }) => {
+    const cache = await caches.open(SENSOR_CACHE);
+    const apiKey = request.url;
+
+    // Try network first with a short timeout
     try {
-      const response = await fetch(request);
-      const cache = await caches.open(SENSOR_CACHE);
-      cache.put(request, response.clone());
-      return response;
-    } catch (error) {
-      const cache = await caches.open(SENSOR_CACHE);
-      const cachedResponse = await cache.match(request);
-      return cachedResponse || new Response("[]", {
-        headers: { "Content-Type": "application/json" },
-      });
+      // Attempt network fetch
+      const networkResponse = await fetch(request);
+      if (networkResponse && networkResponse.ok) {
+        // Update cache with fresh response (best-effort)
+        try {
+          await cache.put(apiKey, networkResponse.clone());
+        } catch (err) {
+          // ignore cache.put errors
+        }
+        return networkResponse;
+      }
+    } catch (err) {
+      // network failed — fall back to cache below
     }
+
+    // Try to return cached response
+    try {
+      const cached = await cache.match(apiKey);
+      if (cached) return cached;
+    } catch (err) {
+      // ignore
+    }
+
+    // As a last resort, return a safe fallback JSON (same shape as install fallback)
+    const fallbackPayload = [
+      {
+        timestamp: new Date().toISOString(),
+        temperature: 0,
+        humidity: 0,
+      },
+    ];
+    return new Response(JSON.stringify(fallbackPayload), {
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 );
 
