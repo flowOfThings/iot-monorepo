@@ -9,7 +9,7 @@ import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate, NetworkFirst } from 'workbox-strategies';
 
 // --- VERSIONING (safe to put AFTER imports) ---
-const SW_VERSION = 'v4';
+const SW_VERSION = 'v5';
 const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
 const STATIC_CACHE = `static-assets-${SW_VERSION}`;
 const IMAGE_CACHE = `images-${SW_VERSION}`;
