@@ -1,39 +1,5 @@
 
-ESP8266 Sensor Nodes
-        |
-        v
-+-----------------------------+
-|     HTTPS Gateway          |
-|  (Linux device OR Worker)  |
-|  - TLS termination         |
-|  - JWT signing             |
-+-----------------------------+
-        |
-        v
-+-----------------------------+
-|     Cloudflare Worker      |
-|        (Edge layer)        |
-|  - Validate JWT            |
-|  - Normalize payload       |
-|  - Fan-out routing         |
-+-----------------------------+
-      |                     \
-      |                      \
-      v                       v
-+-------------------+   +---------------------------+
-| Express Backend   |   | Django Backend           |
-| (Demo API)        |   | (Industrial system)      |
-| - Stores sample   |   | - Business logic         |
-|   sensor data     |   | - Auth, RBAC             |
-| - MongoDB Atlas   |   | - Writes to TimescaleDB  |
-+-------------------+   +---------------------------+
-      |                       |
-      v                       v
-+-------------------+   +---------------------------+
-| React App Frontend|   | Industrial PWA Dashboard |
-| - Debug UI        |   | - Real-time charts       |
-| - Fast iteration  |   | - Offline-first UX       |
-+-------------------+   +---------------------------+
+![alt text](chart.png)
 
 
 System Architecture
