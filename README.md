@@ -1,5 +1,5 @@
 
-![alt text](chart.png)
+![Alt text](images/chart.png)
 
 
 System Architecture
