@@ -1,3 +1,4 @@
+Check out Django backend code at https://github.com/flowOfThings/django-iot-backend
 
 ![Alt text](images/chart.png)
 
