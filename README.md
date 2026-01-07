@@ -1,6 +1,6 @@
 Check out Django backend code at https://github.com/flowOfThings/django-iot-backend
 
-![Alt text](images/chart2.png)
+![Architecture diagram](images/chart.png)
 
 
 System Architecture
