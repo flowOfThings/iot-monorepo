@@ -1,18 +1,42 @@
-flowchart TD
 
-    A[ESP8266 Sensor Nodes] --> B[HTTPS Gateway<br/>(Linux or Cloudflare Worker)]
+ESP8266 Sensor Nodes
+        |
+        v
++-----------------------------+
+|     HTTPS Gateway          |
+|  (Linux device OR Worker)  |
+|  - TLS termination         |
+|  - JWT signing             |
++-----------------------------+
+        |
+        v
++-----------------------------+
+|     Cloudflare Worker      |
+|        (Edge layer)        |
+|  - Validate JWT            |
+|  - Normalize payload       |
+|  - Fan-out routing         |
++-----------------------------+
+      |                     \
+      |                      \
+      v                       v
++-------------------+   +---------------------------+
+| Express Backend   |   | Django Backend           |
+| (Demo API)        |   | (Industrial system)      |
+| - Stores sample   |   | - Business logic         |
+|   sensor data     |   | - Auth, RBAC             |
+| - MongoDB Atlas   |   | - Writes to TimescaleDB  |
++-------------------+   +---------------------------+
+      |                       |
+      v                       v
++-------------------+   +---------------------------+
+| React App Frontend|   | Industrial PWA Dashboard |
+| - Debug UI        |   | - Real-time charts       |
+| - Fast iteration  |   | - Offline-first UX       |
++-------------------+   +---------------------------+
 
-    B --> C[Cloudflare Workers<br/>(Edge Ingestion)]
-    
-    C --> D[Render Backend<br/>(Demo React App)]
-    C --> E[Django Backend<br/>(Industrial System)]
 
-    E --> F[Postgres / TimescaleDB]
-
-    F --> G[Industrial PWA Dashboard]
-
-
-    System Architecture
+System Architecture
 
 This project demonstrates a scalable IoT ingestion and visualization pipeline designed for both demo environments and industrial deployments.
 1. ESP8266 Sensor Nodes
