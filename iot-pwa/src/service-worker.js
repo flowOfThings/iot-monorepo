@@ -8,7 +8,7 @@ import { registerRoute } from 'workbox-routing';
 import { StaleWhileRevalidate } from 'workbox-strategies';
 
 // --- VERSIONING ---
-const SW_VERSION = 'v8';
+const SW_VERSION = 'v9';
 const SENSOR_CACHE = `sensor-data-cache-${SW_VERSION}`;
 const STATIC_CACHE = `static-assets-${SW_VERSION}`;
 const IMAGE_CACHE = `images-${SW_VERSION}`;
@@ -19,6 +19,11 @@ clientsClaim();
 
 // --- PRECACHE BUILD FILES ---
 precacheAndRoute(self.__WB_MANIFEST);
+
+// --- PRECACHE OFFLINE FALLBACK PAGE ---
+precacheAndRoute([
+  { url: '/offline.html', revision: SW_VERSION }
+]);
 
 // --- SAFE PRE-CACHE FOR API ENDPOINT ---
 self.addEventListener('install', (event) => {
@@ -76,7 +81,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// --- ANDROID-FRIENDLY CACHE-FIRST NAVIGATION ROUTE ---
+// --- ANDROID-FRIENDLY NAVIGATION WITH OFFLINE FALLBACK ---
 registerRoute(
   ({ request }) => request.mode === 'navigate',
   async () => {
@@ -89,6 +94,10 @@ registerRoute(
     // Try precache (Workbox stores index.html there)
     const precached = await caches.match('/index.html');
     if (precached) return precached;
+
+    // Offline fallback page
+    const offline = await caches.match('/offline.html');
+    if (offline) return offline;
 
     // Last resort: network (only works online)
     return fetch('/index.html');
